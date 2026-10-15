@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MCShell : fermer Minecraft
+Comment=Ferme le jeu proprement et ouvre le menu MCShell
+Exec=/usr/local/bin/mcshell-exit game
+Icon=application-exit
+Terminal=false
+Categories=System;

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# mcshell-live-setup — prépare l'utilisateur « mcshell » de la session live (service mcshell-live)
+set -euo pipefail
+user=mcshell
+if ! id "$user" >/dev/null 2>&1; then
+    groups=""
+    for g in wheel video; do
+        if getent group "$g" >/dev/null; then groups+="${groups:+,}$g"; fi
+    done
+    useradd -m -s /bin/bash -c "MCShell Live" ${groups:+-G "$groups"} "$user"
+    passwd -d "$user" >/dev/null
+fi
+install -m 0440 /dev/stdin /etc/sudoers.d/90-mcshell-live <<<"$user ALL=(ALL:ALL) NOPASSWD: ALL"
+systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service >/dev/null 2>&1 || true

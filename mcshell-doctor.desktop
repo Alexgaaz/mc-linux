@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MCShell : diagnostic
+Comment=Vérifier l'installation de MCShell
+Exec=/usr/local/bin/mcshell-doctor --pause
+Icon=dialog-information
+Terminal=true
+Categories=System;

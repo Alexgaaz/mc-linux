@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# mcshell-update — met à jour le système (pacman) puis les mods MCShell de l'instance.
+# Les mods ajoutés à la main ne sont jamais modifiés.
+# shellcheck source=../share/mcshell/lib.sh
+. /usr/local/share/mcshell/lib.sh
+mcshell_load_config
+pause=0
+[[ ${1:-} == --pause ]] && pause=1
+rc=0
+clear 2>/dev/null || true
+
+if mcshell_is_live; then
+    warn "Session live : mise à jour du système ignorée (tout est en RAM)."
+else
+    msg "Mise à jour du système (pacman)"
+    sudo pacman -Syu || { err "pacman a échoué"; rc=1; }
+fi
+
+msg "Mods pour Minecraft $MCSHELL_MC_VERSION"
+mcshell_user_init
+python3 "$MCSHELL_SHARE/mcshell-mods.py" sync --mc "$MCSHELL_MC_VERSION" --loader fabric \
+    --required "$MCSHELL_MODS_REQUIRED" --optional "$MCSHELL_MODS_OPTIONAL" \
+    --channel "$MCSHELL_MODS_CHANNEL" --dest "$MCSHELL_GAME_DIR/mods" || {
+    err "mise à jour des mods échouée"
+    rc=1
+}
+
+if ((pause)); then
+    echo
+    read -rp "Entrée pour revenir au menu… " _
+fi
+exit "$rc"

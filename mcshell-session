@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# mcshell-session — démarre le bureau MCShell (sway en mode kiosque) depuis la console 1.
+# Appelé par ~/.bash_profile. Code de retour 99 = rester dans la console.
+# shellcheck source=../share/mcshell/lib.sh
+. /usr/local/share/mcshell/lib.sh
+mcshell_load_config
+install -d -m 700 "$MCSHELL_STATE_DIR"
+fast_exits=$MCSHELL_STATE_DIR/fast-exits
+stay_flag=$MCSHELL_STATE_DIR/stay-in-tty
+
+console_help() {
+    cat <<'EOF'
+
+  MCShell — console
+    exit                   relancer MCShell
+    nmtui                  réseau / Wi-Fi
+    mcshell-doctor         diagnostic
+    mcshell-update         mises à jour (système + mods)
+    sudo mcshell-install   installer sur un disque (session live)
+
+EOF
+}
+
+# Anti-boucle : 3 arrêts rapides en 3 minutes → on reste dans la console
+now=$(date +%s)
+if [[ -f $fast_exits ]] && (($(awk -v t=$((now - 180)) '$1 > t' "$fast_exits" | wc -l) >= 3)); then
+    : >"$fast_exits"
+    err "MCShell s'est arrêté 3 fois en moins de 3 minutes : pause dans la console."
+    echo "Journaux : $MCSHELL_STATE_DIR/launch.log et $MCSHELL_STATE_DIR/sway.log"
+    console_help
+    exit 99
+fi
+
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=MCShell XDG_SESSION_DESKTOP=MCShell
+export QT_QPA_PLATFORM="wayland;xcb" MOZ_ENABLE_WAYLAND=1 _JAVA_AWT_WM_NONREPARENTING=1
+
+sway_args=(--config "$(mcshell_render_sway_config)")
+if grep -q '^nvidia ' /proc/modules 2>/dev/null; then
+    sway_args+=(--unsupported-gpu)
+    export __GL_THREADED_OPTIMIZATIONS=0 # recommandé par Waylandcraft sur NVIDIA
+fi
+
+rm -f "$stay_flag"
+msg "Démarrage de MCShell…"
+start=$SECONDS
+sway "${sway_args[@]}" >"$MCSHELL_STATE_DIR/sway.log" 2>&1
+rc=$?
+duration=$((SECONDS - start))
+
+if [[ -e $stay_flag ]]; then
+    rm -f "$stay_flag"
+    console_help
+    exit 99
+fi
+if ((rc != 0 || duration < 30)); then
+    date +%s >>"$fast_exits"
+fi
+exit 0

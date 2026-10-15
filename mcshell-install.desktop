@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MCShell : installer sur un disque
+Comment=Installer MCShell (session live uniquement)
+Exec=sudo /usr/local/bin/mcshell-install
+Icon=drive-harddisk
+Terminal=true
+Categories=System;
+TryExec=/usr/local/bin/mcshell-install

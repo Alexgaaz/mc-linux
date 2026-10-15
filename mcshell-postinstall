@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# mcshell-postinstall — configure le système installé (exécuté dans arch-chroot par mcshell-install)
+set -Eeuo pipefail
+[[ -r ${1:-} ]] || { echo "usage : mcshell-postinstall FICHIER_ENV" >&2; exit 2; }
+# shellcheck disable=SC1090
+. "$1"
+: "${MCI_USER:?} ${MCI_HASH:?} ${MCI_HOSTNAME:?} ${MCI_TZ:?} ${MCI_LOCALE:?} ${MCI_KEYMAP:?}"
+msg() { printf '\e[1;32m==>\e[0m %s\n' "$*"; }
+
+msg "Langue, heure et clavier"
+ln -sf "/usr/share/zoneinfo/$MCI_TZ" /etc/localtime
+hwclock --systohc || true
+for loc in "$MCI_LOCALE" en_US.UTF-8; do
+    sed -i "s/^#\(${loc//./\\.} \)/\1/" /etc/locale.gen
+done
+locale-gen
+echo "LANG=$MCI_LOCALE" >/etc/locale.conf
+echo "KEYMAP=$MCI_KEYMAP" >/etc/vconsole.conf
+echo "$MCI_HOSTNAME" >/etc/hostname
+cat >/etc/hosts <<EOF
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   $MCI_HOSTNAME.localdomain $MCI_HOSTNAME
+EOF
+
+msg "Utilisateur $MCI_USER (connexion automatique sur la console 1)"
+id "$MCI_USER" >/dev/null 2>&1 || useradd -m -G wheel,video -s /bin/bash "$MCI_USER"
+usermod -p "$MCI_HASH" "$MCI_USER"
+passwd -l root >/dev/null
+install -m 0440 /dev/stdin /etc/sudoers.d/10-wheel <<<'%wheel ALL=(ALL:ALL) ALL'
+install -d /etc/systemd/system/getty@tty1.service.d
+cat >/etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
+[Service]
+ExecStart=
+ExecStart=-/usr/bin/agetty --noreset --noclear --autologin $MCI_USER - \${TERM}
+EOF
+
+msg "Services"
+systemctl enable NetworkManager.service systemd-timesyncd.service fstrim.timer
+systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service || true
+
+msg "GRUB"
+grub_set() {
+    if grep -qE "^#?$1=" /etc/default/grub; then
+        sed -i -E "s|^#?$1=.*|$1=$2|" /etc/default/grub
+    else
+        echo "$1=$2" >>/etc/default/grub
+    fi
+}
+cmdline="loglevel=3 quiet"
+if [[ ${MCI_NVIDIA:-0} == 1 ]]; then cmdline+=" nvidia_drm.modeset=1"; fi
+grub_set GRUB_DISTRIBUTOR '"MCShell"'
+grub_set GRUB_TIMEOUT 5
+grub_set GRUB_TIMEOUT_STYLE menu
+grub_set GRUB_DISABLE_OS_PROBER false
+grub_set GRUB_CMDLINE_LINUX_DEFAULT "\"$cmdline\""
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=MCShell --recheck
+# Copie de secours EFI/BOOT/BOOTX64.EFI pour les cartes mères capricieuses
+grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck || true
+
+if [[ ${MCI_GRUB_THEME:-on} == on ]]; then
+    msg "Thème GRUB « Minegrub World Selection » (Windows apparaîtra comme un autre monde)"
+    tmp=$(mktemp -d)
+    if git clone -q --depth 1 https://github.com/Lxtharia/minegrub-world-sel-theme "$tmp/theme"; then
+        install -d /boot/grub/themes
+        rm -rf /boot/grub/themes/minegrub-world-selection
+        cp -r "$tmp/theme/minegrub-world-selection" /boot/grub/themes/
+        install -m 644 /usr/local/share/mcshell/grub/mcshell.png \
+            /boot/grub/themes/minegrub-world-selection/icons/mcshell.png
+        grub_set GRUB_THEME '"/boot/grub/themes/minegrub-world-selection/theme.txt"'
+    else
+        echo "  Thème non téléchargé : GRUB restera sobre."
+    fi
+    rm -rf "$tmp"
+fi
+grub-mkconfig -o /boot/grub/grub.cfg
+mkinitcpio -P
+msg "Configuration terminée"

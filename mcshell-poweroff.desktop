@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MCShell : éteindre
+Comment=Sauvegarde le monde puis éteint l'ordinateur
+Exec=/usr/local/bin/mcshell-exit poweroff
+Icon=system-shutdown
+Terminal=false
+Categories=System;

@@ -1,0 +1,6 @@
+{
+  "pixelsPerBlock": 500,
+  "focusOnHover": false,
+  "terminalChoice": "@TERMINAL@",
+  "detachCursor": false
+}

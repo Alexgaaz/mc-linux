@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MCShell : quitter vers la console
+Comment=Ferme MCShell et ouvre la console texte
+Exec=/usr/local/bin/mcshell-exit tty
+Icon=utilities-terminal
+Terminal=false
+Categories=System;

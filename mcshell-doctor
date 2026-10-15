@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# mcshell-doctor — diagnostic rapide de MCShell
+# shellcheck source=../share/mcshell/lib.sh
+. /usr/local/share/mcshell/lib.sh
+mcshell_load_config
+pause=0
+[[ ${1:-} == --pause ]] && pause=1
+ok() { printf '  \e[32m✔\e[0m %s\n' "$*"; }
+ko() { printf '  \e[31m✘\e[0m %s\n' "$*"; }
+
+clear 2>/dev/null || true
+mode=installé
+if mcshell_is_live; then mode=live; fi
+echo "MCShell $(cat "$MCSHELL_SHARE/VERSION" 2>/dev/null) — diagnostic (mode $mode, utilisateur $USER)"
+
+echo; echo "Logiciels"
+for c in sway prismlauncher xwayland-satellite xkbcli jq python3 "$MCSHELL_TERMINAL"; do
+    if command -v "$c" >/dev/null 2>&1; then ok "$c"; else ko "$c manquant"; fi
+done
+v=$(xkbcli --version 2>/dev/null)
+if [[ -n $v && $(printf '%s\n' 1.11.0 "$v" | sort -V | head -n1) == 1.11.0 ]]; then
+    ok "xkbcommon $v (Waylandcraft demande ≥ 1.11)"
+else
+    ko "xkbcommon ${v:-inconnu} : Waylandcraft demande ≥ 1.11"
+fi
+java_dir=$(compgen -G '/usr/lib/jvm/java-25-*' | head -n1)
+if [[ -n $java_dir ]]; then ok "Java 25 : $java_dir"; else ko "Java 25 absent (Prism le téléchargera)"; fi
+
+echo; echo "Carte graphique"
+lspci -k 2>/dev/null | grep -A3 -E 'VGA|3D|Display' | grep -E 'VGA|3D|Display|driver in use' | sed 's/^/    /'
+if grep -q '^nvidia ' /proc/modules 2>/dev/null; then echo "    NVIDIA : __GL_THREADED_OPTIMIZATIONS=0 appliqué"; fi
+
+echo; echo "Réseau"
+if mcshell_online; then ok "serveurs Mojang joignables"; else ko "pas d'accès aux serveurs Mojang (menu → R)"; fi
+
+echo; echo "Minecraft"
+if mcshell_has_account; then ok "compte Microsoft configuré dans Prism"; else ko "aucun compte (menu → P)"; fi
+if [[ -f $MCSHELL_INSTANCE_DIR/instance.cfg ]]; then
+    ok "instance « $MCSHELL_INSTANCE » ($MCSHELL_MC_VERSION, Fabric $MCSHELL_FABRIC_LOADER)"
+else
+    ko "instance absente (créée au prochain lancement)"
+fi
+if [[ -n $MCSHELL_WORLD && -d $MCSHELL_GAME_DIR/saves/$MCSHELL_WORLD ]]; then
+    ok "monde « $MCSHELL_WORLD » ouvert automatiquement"
+else
+    ko "monde « $MCSHELL_WORLD » absent : crée-le dans le jeu pour l'ouverture automatique"
+fi
+python3 "$MCSHELL_SHARE/mcshell-mods.py" show --dest "$MCSHELL_GAME_DIR/mods" 2>/dev/null | sed 's/^/    /'
+
+echo; echo "Journaux"
+for f in "$MCSHELL_STATE_DIR/launch.log" "$MCSHELL_STATE_DIR/sway.log" \
+    "$MCSHELL_GAME_DIR/logs/latest.log" "$MCSHELL_PRISM_DIR"/logs/*.log; do
+    if [[ -f $f ]]; then echo "    $f"; fi
+done
+
+if ((pause)); then
+    echo
+    read -rp "Entrée pour revenir au menu… " _
+fi

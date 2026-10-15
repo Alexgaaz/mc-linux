@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# mcshell-launch — boucle principale de MCShell, exécutée DANS sway :
+#   profil Prism → réseau → compte Microsoft → Minecraft → menu MCShell quand le jeu se ferme.
+# shellcheck source=../share/mcshell/lib.sh
+. /usr/local/share/mcshell/lib.sh
+set -u
+mcshell_load_config
+install -d -m 700 "$MCSHELL_STATE_DIR"
+exec >>"$MCSHELL_STATE_DIR/launch.log" 2>&1
+trap 'mcshell_swaymsg exit >/dev/null 2>&1' EXIT
+
+log() { printf '[%(%F %T)T] %s\n' -1 "$*"; }
+term() { "$MCSHELL_TERMINAL" "$@"; }
+
+wait_online() {
+    local i
+    for ((i = 0; i < ${1:-15}; i++)); do
+        mcshell_online && return 0
+        sleep 1
+    done
+    return 1
+}
+
+# MCSHELL_REFRESH=max : fréquence la plus haute à la résolution actuelle (ex. 165 Hz)
+apply_output_mode() {
+    [[ $MCSHELL_REFRESH == max ]] || return 0
+    local name mode
+    while IFS=$'\t' read -r name mode; do
+        [[ -n $name ]] || continue
+        if mcshell_swaymsg output "$name" mode "$mode" >/dev/null; then log "Écran $name : $mode"; fi
+    done < <(mcshell_swaymsg -t get_outputs -r 2>/dev/null | jq -r '
+        .[] | select(.active) | .current_mode as $c
+        | ([.modes[] | select(.width == $c.width and .height == $c.height)] | max_by(.refresh)) as $m
+        | select($m != null and $m.refresh > $c.refresh)
+        | "\(.name)\t\($m.width)x\($m.height)@\($m.refresh / 1000)Hz"')
+}
+
+first_run_welcome() {
+    local flag=${XDG_STATE_HOME:-$HOME/.local/state}/mcshell/welcome-done
+    [[ -e $flag ]] && return 0
+    term -e /usr/local/bin/mcshell-menu --welcome
+    mkdir -p "${flag%/*}" && touch "$flag"
+}
+
+play() {
+    if ! wait_online 15; then
+        log "Hors ligne : assistant réseau"
+        term -e /usr/local/bin/mcshell-netsetup
+        wait_online 5 || log "Toujours hors ligne : Prism proposera le mode hors connexion"
+    fi
+    if ! mcshell_has_account; then
+        log "Aucun compte Microsoft : assistant de Prism"
+        prismlauncher
+        if ! mcshell_has_account; then
+            log "Connexion non effectuée"
+            return 1
+        fi
+    fi
+    local args=(--launch "$MCSHELL_INSTANCE")
+    if [[ -n $MCSHELL_WORLD && -d $MCSHELL_GAME_DIR/saves/$MCSHELL_WORLD ]]; then
+        args+=(--world "$MCSHELL_WORLD")
+    fi
+    log "Lancement : prismlauncher ${args[*]}"
+    if [[ $MCSHELL_GAME_BACKEND == x11 ]]; then
+        env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb prismlauncher "${args[@]}"
+    else
+        prismlauncher "${args[@]}"
+    fi
+    log "Prism s'est arrêté (code $?)"
+}
+
+main() {
+    log "=== Session MCShell $(cat "$MCSHELL_SHARE/VERSION" 2>/dev/null)"
+    mcshell_user_init || log "Profil Prism incomplet"
+    apply_output_mode
+    first_run_welcome
+    local next=play choice_file=$MCSHELL_STATE_DIR/menu-choice
+    while :; do
+        log "Action : $next"
+        case $next in
+            play) play ;;
+            prism) prismlauncher ;;
+            terminal) term ;;
+            network) term -e /usr/local/bin/mcshell-netsetup ;;
+            update) term -e /usr/local/bin/mcshell-update --pause ;;
+            doctor) term -e /usr/local/bin/mcshell-doctor --pause ;;
+            install) term -e sudo /usr/local/bin/mcshell-install ;;
+            reboot) systemctl reboot; sleep 60 ;;
+            poweroff) systemctl poweroff; sleep 60 ;;
+            tty) touch "$MCSHELL_STATE_DIR/stay-in-tty"; exit 0 ;;
+            *) : ;;
+        esac
+        rm -f "$choice_file"
+        term -e /usr/local/bin/mcshell-menu "$choice_file"
+        next=$(cat "$choice_file" 2>/dev/null) || next=menu
+    done
+}
+
+main "$@"

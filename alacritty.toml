@@ -1,0 +1,24 @@
+# Terminal de MCShell (menus, nmtui, fenêtres Waylandcraft) — couleurs du chat Minecraft
+[window]
+padding = { x = 14, y = 12 }
+dynamic_padding = true
+
+[font]
+size = 13.0
+
+[font.normal]
+family = "DejaVu Sans Mono"
+
+[colors.primary]
+background = "#141414"
+foreground = "#e6e6e6"
+
+[colors.normal]
+black = "#1d1f21"
+red = "#ff5555"
+green = "#55ff55"
+yellow = "#ffff55"
+blue = "#5555ff"
+magenta = "#ff55ff"
+cyan = "#55ffff"
+white = "#dddddd"

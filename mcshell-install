@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# mcshell-install — installe MCShell sur un disque ENTIER (UEFI uniquement).
+# À lancer depuis la session live : menu MCShell → [I], ou « sudo mcshell-install ».
+# shellcheck source=../share/mcshell/lib.sh
+. /usr/local/share/mcshell/lib.sh
+mcshell_load_config
+set -Eeuo pipefail
+
+[[ $EUID -eq 0 ]] || exec sudo -- "$0" "$@"
+
+TARGET=/mnt
+n="" confirm="" USERNAME="" HOST_NEW="" TZ_NEW="" LAYOUT="" KEYMAP="" LOCALE=""
+LOG=/tmp/mcshell-install.log
+part() { if [[ $1 =~ [0-9]$ ]]; then echo "${1}p$2"; else echo "${1}$2"; fi; }
+ask() { # ask VARIABLE "question" [défaut]
+    local ans
+    read -rp "$2${3:+ [$3]} : " ans
+    printf -v "$1" '%s' "${ans:-${3:-}}"
+}
+net_ok() { curl -fsI --max-time 8 https://archlinux.org >/dev/null 2>&1; }
+
+clear
+cat <<'EOF'
+=== Installation de MCShell ===
+Le disque choisi sera ENTIÈREMENT effacé (GPT : EFI 1 Gio + système ext4).
+Ctrl+C à tout moment pour annuler : rien n'est modifié avant la confirmation finale.
+
+EOF
+
+mcshell_is_live || die "Lance l'installeur depuis la clé USB MCShell (session live)."
+[[ -d /sys/firmware/efi/efivars ]] || die "Démarrage UEFI requis : relance la clé en mode UEFI (pas Legacy/CSM)."
+if ! net_ok; then
+    warn "Pas d'accès Internet : choisis un réseau."
+    nmtui-connect || true
+    net_ok || die "Internet est nécessaire pour télécharger les paquets."
+fi
+
+# Tout ce qui suit est aussi écrit dans le journal
+exec > >(tee -a "$LOG") 2>&1
+trap 'err "Échec à la ligne $LINENO. Journal : $LOG"; read -rp "Entrée pour quitter… " _ || true' ERR
+
+# --- Choix du disque (la clé live est exclue) ---------------------------------
+live_disk=""
+if src=$(findmnt -no SOURCE /run/archiso/bootmnt 2>/dev/null); then
+    pk=$(lsblk -no PKNAME "$src" 2>/dev/null | head -n1 || true)
+    [[ -n $pk ]] && live_disk=/dev/$pk
+fi
+mapfile -t disks < <(lsblk -dnpo NAME,TYPE,RO | awk '$2 == "disk" && $3 == "0" { print $1 }' |
+    grep -vE '^/dev/(zram|loop)' | grep -vxF "${live_disk:-/aucun}" || true)
+((${#disks[@]})) || die "Aucun disque utilisable trouvé."
+
+echo "Disques disponibles :"
+for i in "${!disks[@]}"; do
+    d=${disks[$i]}
+    printf '\n  [%d] %s — %s %s\n' "$((i + 1))" "$d" "$(lsblk -dno SIZE "$d" | xargs)" "$(lsblk -dno MODEL "$d" | xargs)"
+    lsblk -no NAME,SIZE,FSTYPE,LABEL "$d" | tail -n +2 | sed 's/^/        /'
+done
+echo
+ask n "Numéro du disque à EFFACER"
+if ! [[ $n =~ ^[0-9]+$ ]] || ((n < 1 || n > ${#disks[@]})); then die "Choix invalide."; fi
+DISK=${disks[$((n - 1))]}
+if lsblk -no MOUNTPOINTS "$DISK" | grep -q .; then die "$DISK est en cours d'utilisation (monté)."; fi
+if lsblk -no FSTYPE "$DISK" | grep -qi ntfs; then
+    warn "$DISK contient une partition NTFS : probablement Windows ou tes données !"
+fi
+
+# --- Compte et réglages ---------------------------------------------------------
+echo
+ask USERNAME "Nom d'utilisateur (minuscules, sans espace)"
+[[ $USERNAME =~ ^[a-z_][a-z0-9_-]{0,31}$ && $USERNAME != root ]] || die "Nom d'utilisateur invalide."
+while :; do
+    read -rsp "Mot de passe : " p1; echo
+    read -rsp "Confirmation : " p2; echo
+    [[ -n $p1 && $p1 == "$p2" ]] && break
+    warn "Mots de passe vides ou différents, recommence."
+done
+HASH=$(openssl passwd -6 -stdin <<<"$p1")
+unset p1 p2
+ask HOST_NEW "Nom de la machine" mcshell
+[[ $HOST_NEW =~ ^[a-zA-Z0-9-]{1,63}$ ]] || die "Nom de machine invalide."
+ask TZ_NEW "Fuseau horaire" "$MCSHELL_TIMEZONE"
+[[ -f /usr/share/zoneinfo/$TZ_NEW ]] || die "Fuseau inconnu : $TZ_NEW"
+ask LAYOUT "Clavier (fr, be, ch, us…)" "$MCSHELL_KEYBOARD_LAYOUT"
+ask KEYMAP "Clavier de la console (fr-latin9, be-latin1, us…)" "$MCSHELL_CONSOLE_KEYMAP"
+ask LOCALE "Langue du système" "$MCSHELL_LOCALE"
+[[ $LAYOUT =~ ^[a-z0-9_,-]+$ && $KEYMAP =~ ^[a-zA-Z0-9_.-]+$ && $LOCALE =~ ^[A-Za-z_]+\.UTF-8$ ]] ||
+    die "Clavier ou langue invalide."
+
+NVIDIA=0 GPU_PKGS=() NVIDIA_TXT=non
+if lspci 2>/dev/null | grep -iE 'vga|3d|display' | grep -qi nvidia; then
+    NVIDIA=1 GPU_PKGS=(nvidia-open nvidia-utils) NVIDIA_TXT="oui (pilote nvidia-open, expérimental)"
+fi
+
+cat <<EOF
+
+Récapitulatif
+  Disque       : $DISK ($(lsblk -dno SIZE "$DISK" | xargs)) — SERA EFFACÉ
+  Utilisateur  : $USERNAME    Machine : $HOST_NEW
+  Fuseau       : $TZ_NEW    Langue : $LOCALE
+  Clavier      : $LAYOUT (console : $KEYMAP)
+  GPU NVIDIA   : $NVIDIA_TXT
+
+EOF
+ask confirm "Tape EFFACER pour lancer l'installation"
+[[ $confirm == EFFACER ]] || die "Installation annulée : rien n'a été modifié."
+
+# --- Partitionnement -----------------------------------------------------------
+msg "Partitionnement de $DISK"
+umount -R "$TARGET" 2>/dev/null || true
+while read -r p; do wipefs -af "$p" >/dev/null 2>&1 || true; done < <(lsblk -lnpo NAME "$DISK" | tail -n +2)
+wipefs -af "$DISK"
+sgdisk --zap-all "$DISK"
+sgdisk -n 1:0:+1G -t 1:ef00 -c 1:EFI -n 2:0:0 -t 2:8304 -c 2:MCShell "$DISK"
+partprobe "$DISK" 2>/dev/null || true
+udevadm settle
+EFI=$(part "$DISK" 1) ROOTP=$(part "$DISK" 2)
+for _ in {1..10}; do [[ -b $ROOTP ]] && break; sleep 1; done
+[[ -b $EFI && -b $ROOTP ]] || die "Partitions introuvables ($EFI, $ROOTP)."
+
+msg "Formatage"
+mkfs.fat -F 32 -n MCSHELL "$EFI"
+mkfs.ext4 -F -L mcshell "$ROOTP"
+mount "$ROOTP" "$TARGET"
+mount --mkdir -o umask=0077 "$EFI" "$TARGET/boot"
+
+# --- Paquets -------------------------------------------------------------------
+msg "Installation des paquets depuis Internet (plusieurs minutes)"
+mapfile -t PKGS < <(grep -vE '^[[:space:]]*(#|$)' "$MCSHELL_SHARE/packages.txt" | awk '{ print $1 }')
+BASE=(base linux linux-firmware amd-ucode intel-ucode grub efibootmgr os-prober dosfstools
+    e2fsprogs sudo nano bash-completion man-db)
+pacstrap -K "$TARGET" "${BASE[@]}" "${PKGS[@]}" "${GPU_PKGS[@]}"
+genfstab -U "$TARGET" >>"$TARGET/etc/fstab"
+
+# --- Couche MCShell ------------------------------------------------------------
+msg "Copie de la couche MCShell"
+install -d "$TARGET/usr/local/bin" "$TARGET/usr/local/share/applications"
+for f in /usr/local/bin/mcshell-*; do
+    case ${f##*/} in mcshell-install | mcshell-live-setup) continue ;; esac
+    install -m 755 "$f" "$TARGET/usr/local/bin/"
+done
+cp -a "$MCSHELL_SHARE" "$TARGET/usr/local/share/"
+for f in /usr/local/share/applications/mcshell-*.desktop; do
+    [[ $f == */mcshell-install.desktop ]] && continue
+    install -m 644 "$f" "$TARGET/usr/local/share/applications/"
+done
+install -m 644 /etc/mcshell.conf "$TARGET/etc/mcshell.conf"
+cp -a /etc/skel/. "$TARGET/etc/skel/"
+conf_set() {
+    local f=$TARGET/etc/mcshell.conf
+    if grep -q "^$1=" "$f"; then sed -i "s|^$1=.*|$1=\"$2\"|" "$f"; else printf '%s="%s"\n' "$1" "$2" >>"$f"; fi
+}
+conf_set MCSHELL_KEYBOARD_LAYOUT "$LAYOUT"
+conf_set MCSHELL_CONSOLE_KEYMAP "$KEYMAP"
+conf_set MCSHELL_TIMEZONE "$TZ_NEW"
+conf_set MCSHELL_LOCALE "$LOCALE"
+
+# --- Configuration dans le système installé ------------------------------------
+ENVF=$TARGET/root/.mcshell-install.env
+(
+    umask 077
+    {
+        printf 'MCI_USER=%q\n' "$USERNAME"
+        printf 'MCI_HASH=%q\n' "$HASH"
+        printf 'MCI_HOSTNAME=%q\n' "$HOST_NEW"
+        printf 'MCI_TZ=%q\n' "$TZ_NEW"
+        printf 'MCI_LOCALE=%q\n' "$LOCALE"
+        printf 'MCI_KEYMAP=%q\n' "$KEYMAP"
+        printf 'MCI_NVIDIA=%q\n' "$NVIDIA"
+        printf 'MCI_GRUB_THEME=%q\n' "$MCSHELL_GRUB_THEME"
+    } >"$ENVF"
+)
+arch-chroot "$TARGET" /usr/local/bin/mcshell-postinstall /root/.mcshell-install.env
+rm -f "$ENVF"
+sync
+umount -R "$TARGET"
+
+echo
+msg "MCShell est installé ! Retire la clé USB puis redémarre."
+read -rp "[Entrée] redémarrer maintenant, [Ctrl+C] rester ici " _
+systemctl reboot

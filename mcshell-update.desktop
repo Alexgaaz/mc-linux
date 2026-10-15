@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MCShell : mises à jour
+Comment=Mettre à jour le système et les mods
+Exec=/usr/local/bin/mcshell-update --pause
+Icon=system-software-update
+Terminal=true
+Categories=System;

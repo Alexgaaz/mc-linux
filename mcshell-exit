@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# mcshell-exit — sorties propres de MCShell (aussi accessibles via le lanceur Waylandcraft, touche V)
+#   game      fermer Minecraft (retour au menu MCShell)
+#   tty       quitter vers la console
+#   reboot    fermer Minecraft proprement (sauvegarde du monde) puis redémarrer
+#   poweroff  fermer Minecraft proprement puis éteindre
+# shellcheck source=../share/mcshell/lib.sh
+. /usr/local/share/mcshell/lib.sh
+mcshell_load_config
+
+close_game() {
+    pgrep -u "$UID" -x prismlauncher >/dev/null || return 0
+    mcshell_swaymsg kill >/dev/null 2>&1 || true
+    local i
+    for ((i = 0; i < 30; i++)); do
+        pgrep -u "$UID" -x prismlauncher >/dev/null || return 0
+        sleep 1
+    done
+    warn "Minecraft ne s'est pas fermé à temps."
+}
+
+case ${1:-} in
+    game) mcshell_swaymsg kill >/dev/null ;;
+    tty)
+        install -d -m 700 "$MCSHELL_STATE_DIR"
+        touch "$MCSHELL_STATE_DIR/stay-in-tty"
+        close_game
+        mcshell_swaymsg exit >/dev/null
+        ;;
+    reboot) close_game; systemctl reboot ;;
+    poweroff) close_game; systemctl poweroff ;;
+    *) echo "usage : mcshell-exit {game|tty|reboot|poweroff}" >&2; exit 2 ;;
+esac

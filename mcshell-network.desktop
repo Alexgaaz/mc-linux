@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MCShell : réseau / Wi-Fi
+Comment=Configurer la connexion réseau
+Exec=nmtui
+Icon=network-wireless
+Terminal=true
+Categories=System;

@@ -1,0 +1,32 @@
+name: Construire l'ISO MCShell
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    steps:
+      - name: Outils Arch
+        run: pacman -Syu --noconfirm --needed archiso python git
+
+      - name: Récupérer le projet
+        uses: actions/checkout@v4
+
+      - name: Construire l'ISO
+        run: bash build.sh
+
+      - name: Publier l'ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcshell-iso
+          path: |
+            out/*.iso
+            out/*.sha256
+          compression-level: 0
+          retention-days: 7

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# mcshell-netsetup — assistant réseau (NetworkManager / nmtui)
+# shellcheck source=../share/mcshell/lib.sh
+. /usr/local/share/mcshell/lib.sh
+mcshell_load_config
+clear
+echo "=== Réseau ==="
+echo
+if mcshell_online; then
+    echo "Internet : OK (serveurs Minecraft joignables)."
+else
+    echo "Internet : pas d'accès pour le moment."
+fi
+echo
+nmcli -f DEVICE,TYPE,STATE,CONNECTION device status 2>/dev/null || true
+echo
+echo "Internet sert à la connexion Microsoft et au téléchargement de Minecraft."
+echo
+read -rsn1 -p "[Entrée] choisir un réseau Wi-Fi / filaire    [S] passer " key || exit 0
+echo
+[[ ${key,,} == s ]] && exit 0
+nmtui-connect || sudo nmtui-connect

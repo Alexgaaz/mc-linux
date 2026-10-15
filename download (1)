@@ -1,0 +1,12 @@
+# ~/.bash_profile — MCShell
+# shellcheck shell=bash
+# shellcheck source=/dev/null
+[[ -f ~/.bashrc ]] && . ~/.bashrc
+
+# Sur la console 1, le bureau MCShell démarre automatiquement.
+if [[ -z ${WAYLAND_DISPLAY:-} && -z ${DISPLAY:-} ]] &&
+    [[ ${XDG_VTNR:-} == 1 || $(tty) == /dev/tty1 ]] &&
+    command -v mcshell-session >/dev/null 2>&1; then
+    mcshell-session
+    [[ $? -eq 99 ]] || exit 0
+fi

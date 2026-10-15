@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MCShell : redémarrer
+Comment=Sauvegarde le monde puis redémarre l'ordinateur
+Exec=/usr/local/bin/mcshell-exit reboot
+Icon=system-reboot
+Terminal=false
+Categories=System;

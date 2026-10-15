@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# mcshell-menu — écrans plein écran de MCShell (dans le terminal).
+#   mcshell-menu FICHIER    affiche le menu et écrit le choix dans FICHIER
+#   mcshell-menu --welcome  écran d'accueil du premier démarrage
+# shellcheck source=../share/mcshell/lib.sh
+. /usr/local/share/mcshell/lib.sh
+mcshell_load_config
+
+G=$'\e[1;32m' Y=$'\e[1;33m' W=$'\e[1;37m' D=$'\e[2m' R=$'\e[0m'
+
+logo() {
+    clear
+    printf '%s' "$G"
+    cat <<'EOF'
+   __  __  ____ ____  _          _ _
+  |  \/  |/ ___/ ___|| |__   ___| | |
+  | |\/| | |   \___ \| '_ \ / _ \ | |
+  | |  | | |___ ___) | | | |  __/ | |
+  |_|  |_|\____|____/|_| |_|\___|_|_|
+EOF
+    printf '%s   %sMinecraft est ton bureau%s\n\n' "$R" "$D" "$R"
+}
+
+welcome() {
+    logo
+    cat <<EOF
+${W}Bienvenue !${R} Voici comment ça se passe :
+
+ ${Y}1.${R} Prism Launcher te demande ton compte Microsoft (QR code à scanner
+    avec ton téléphone). Il faut posséder Minecraft Java Edition.
+ ${Y}2.${R} Minecraft ${MCSHELL_MC_VERSION} + Fabric + Waylandcraft se téléchargent
+    au premier lancement (~1 Go).
+ ${Y}3.${R} Crée un monde nommé « ${MCSHELL_WORLD} » (Superplat conseillé) :
+    il s'ouvrira tout seul à chaque démarrage.
+
+${W}Dans le jeu (Waylandcraft)${R}
+   V ....... lanceur d'applications (Firefox, terminal, fichiers, MCShell…)
+   B ....... gestionnaire de fenêtres
+   G ....... capture du clavier pour écrire dans une fenêtre
+   Alt+Q ... capture totale (Échap va à l'appli, souris relative), Alt+Q pour sortir
+
+${W}Partout${R}
+   Ctrl+Alt+Fin ............. fermer Minecraft → menu MCShell
+   Ctrl+Alt+Retour arrière .. quitter vers la console
+
+EOF
+    read -rp "Appuie sur Entrée pour continuer… " _
+}
+
+menu() {
+    local out=$1 key live=0 choice
+    if mcshell_is_live; then live=1; fi
+    while :; do
+        logo
+        printf '  %s[Entrée]%s Jouer (relancer MCShell)\n' "$Y" "$R"
+        printf '  %s[P]%s      Prism Launcher — compte, mods, réglages\n' "$Y" "$R"
+        printf '  %s[T]%s      Terminal\n' "$Y" "$R"
+        printf '  %s[R]%s      Réseau / Wi-Fi\n' "$Y" "$R"
+        printf '  %s[M]%s      Mettre à jour (système + mods)\n' "$Y" "$R"
+        printf '  %s[D]%s      Diagnostic\n' "$Y" "$R"
+        if ((live)); then printf '  %s[I]%s      Installer MCShell sur un disque\n' "$Y" "$R"; fi
+        printf '\n  %s[B]%s Redémarrer    %s[E]%s Éteindre    %s[C]%s Console\n\n' "$Y" "$R" "$Y" "$R" "$Y" "$R"
+        read -rsn1 key || exit 1
+        case ${key,,} in
+            '') choice="play" ;;
+            p) choice="prism" ;;
+            t) choice="terminal" ;;
+            r) choice="network" ;;
+            m) choice="update" ;;
+            d) choice="doctor" ;;
+            i) if ((live)); then choice="install"; else continue; fi ;;
+            b) choice="reboot" ;;
+            e) choice="poweroff" ;;
+            c) choice="tty" ;;
+            *) continue ;;
+        esac
+        printf '%s\n' "$choice" >"$out"
+        return 0
+    done
+}
+
+case ${1:-} in
+    --welcome) welcome ;;
+    '') echo "usage : mcshell-menu FICHIER | --welcome" >&2; exit 2 ;;
+    *) menu "$1" ;;
+esac

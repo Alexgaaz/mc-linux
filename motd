@@ -1,0 +1,5 @@
+MCShell live — Minecraft comme bureau (base Arch Linux)
+
+  exit                    relancer MCShell (console 1)
+  sudo mcshell-install    installer sur un disque
+  mcshell-doctor          diagnostic

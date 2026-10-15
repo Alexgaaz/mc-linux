@@ -1,0 +1,6 @@
+lang:@LANG@
+onboardAccessibility:false
+pauseOnLostFocus:false
+skipMultiplayerWarning:true
+joinedFirstServer:true
+tutorialStep:none

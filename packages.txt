@@ -1,0 +1,52 @@
+# Paquets MCShell (ajoutés à l'ISO et installés sur le disque)
+
+# Session « kiosque »
+sway
+swaybg
+xorg-xwayland
+xwayland-satellite
+
+# Minecraft
+prismlauncher
+qt6-wayland
+jre25-openjdk
+libxkbcommon
+
+# Graphismes (AMD / Intel via Mesa)
+mesa
+vulkan-radeon
+vulkan-intel
+vulkan-icd-loader
+
+# Son
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+
+# Réseau
+networkmanager
+
+# Applis affichées dans le monde par Waylandcraft
+alacritty
+firefox
+thunar
+gvfs
+mousepad
+mpv
+
+# Polices
+ttf-dejavu
+noto-fonts
+noto-fonts-emoji
+
+# Outils
+polkit
+sudo
+jq
+curl
+git
+python
+htop
+pciutils
+xdg-utils
